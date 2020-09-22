@@ -1,0 +1,24 @@
+{
+  "name": "safe-redis-schema",
+  "version": "1.0.0",
+  "description": "Type-safe data schemas for redis",
+  "main": "index.js",
+  "scripts": {
+    "clean": "rm -rf ./coverage",
+    "build": "npx tsc",
+    "test": "npx jest --coverage"
+  },
+  "author": "Tom Morton <tom.m@38degrees.org.uk>",
+  "license": "MIT",
+  "dependencies": {
+    "redis": "^3.0.2",
+    "safe-portals": "^2.0.2"
+  },
+  "devDependencies": {
+    "@types/redis": "^2.8.27",
+    "jest": "^26.4.2",
+    "ts-jest": "^26.4.0",
+    "ts-node": "^9.0.0",
+    "typescript": "^4.0.3"
+  }
+}
