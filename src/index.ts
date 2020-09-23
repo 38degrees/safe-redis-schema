@@ -114,6 +114,8 @@ export interface Store {
   hdel(key: string, hash: string): Promise<void>;
   hincrby(key: string, hash: string, val: number): Promise<number>;
 
+  getRawConnection(): Redis.RedisClient;
+
   /* utils */
   namespacedBy(namespacePrefix: string): StoreNamespace;
   getPrefix(): string;
@@ -128,6 +130,10 @@ export class StoreNamespace implements Store {
   constructor(store: Store, prefix: string) {
     this.store = store;
     this.prefix = prefix;
+  }
+
+  getRawConnection() {
+    return this.store.getRawConnection();
   }
 
   get(key: string) { return this.store.get(this.prefix + key); }
