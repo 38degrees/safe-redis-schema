@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Type-safe and validated data schemas for Redis and Typescript",
   "main": "./dist/index.js",
+  "types": "./dist/index.d.js",
   "scripts": {
     "clean": "rm -rf ./coverage",
     "build": "npx tsc",
