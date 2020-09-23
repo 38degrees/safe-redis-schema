@@ -12,8 +12,7 @@ const redisUrl = process.env["REDIS_URL"] || 'redis://127.0.0.1:6379';
 
 describe("Redis KvStore", () => {
   test("Promise-based redis wrapper", async () => {
-    const redis = Redis.createClient(redisUrl);
-    const kv = new RedisStore(redis);
+    const kv = new RedisStore(redisUrl);
     const ns = kv.namespacedBy('redis-schema:test:');
     const kvTest1 = ns.namespacedBy("one:");
     const kvTest2 = ns.namespacedBy("two:");
@@ -54,27 +53,25 @@ describe("Redis KvStore", () => {
     expect(await kv.hincrby("test_hash", "key", 1)).toEqual(2);
     expect(await kv.hget("test_hash", "key")).toEqual("2");
 
-    redis.end(true);
+    kv.close();
   });
 
   test("defineObj", async () => {
-    const redis = Redis.createClient(redisUrl);
-    const kv = new RedisStore(redis);
+    const kv = new RedisStore(redisUrl);
     const ns = kv.namespacedBy('redis-schema:test:');
 
     const k1 = defineObj(ns, 'k1', Safe.array(Safe.bool));
 
     await k1.del();
-    await expect(k1.get()).rejects.toEqual(new Safe.ValidationError('array', undefined));
+    await expect(k1.get()).rejects.toBeInstanceOf(Safe.ValidationError);
     await k1.set([true,true,false]);
     expect (await k1.get()).toEqual([true, true, false]);
 
-    redis.end(true);
+    kv.close();
   });
 
   test("defineCounter", async () => {
-    const redis = Redis.createClient(redisUrl);
-    const kv = new RedisStore(redis);
+    const kv = new RedisStore(redisUrl);
     const ns = kv.namespacedBy('redis-schema:test:');
 
     const c = defineCounter(ns, 'mycounter');
@@ -88,7 +85,7 @@ describe("Redis KvStore", () => {
     await c.zero();
     expect (await c.get()).toEqual(0);
 
-    redis.end(true);
+    kv.close();
   });
 
   test("defineHashOf", async () => {

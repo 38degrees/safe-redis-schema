@@ -1,7 +1,7 @@
 {
   "name": "safe-redis-schema",
   "version": "1.0.0",
-  "description": "Type-safe data schemas for redis",
+  "description": "Type-safe and validated data schemas for Redis and Typescript",
   "main": "index.js",
   "scripts": {
     "clean": "rm -rf ./coverage",

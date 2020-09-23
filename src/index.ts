@@ -172,9 +172,17 @@ export class RedisStore implements Store {
   db: Redis.RedisClient;
   schemata: Set<string>;
 
-  constructor(db: Redis.RedisClient) {
-    this.db = db;
+  constructor(client_or_connection_string: Redis.RedisClient | string) {
+    if (client_or_connection_string instanceof Redis.RedisClient) {
+      this.db = client_or_connection_string;
+    } else {
+      this.db = Redis.createClient(client_or_connection_string);
+    }
     this.schemata = new Set([]);
+  }
+
+  close() {
+    this.db.end(true);
   }
 
   markKeyAsUsed(key: string): void {
