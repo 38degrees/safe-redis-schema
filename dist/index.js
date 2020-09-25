@@ -82,6 +82,9 @@ class StoreNamespace {
         this.store = store;
         this.prefix = prefix;
     }
+    getRawConnection() {
+        return this.store.getRawConnection();
+    }
     get(key) { return this.store.get(this.prefix + key); }
     set(key, value, expirySeconds) {
         return this.store.set(this.prefix + key, value, expirySeconds);

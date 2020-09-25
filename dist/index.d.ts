@@ -34,6 +34,7 @@ export interface Store {
     hset(key: string, hash: string, value: string): Promise<void>;
     hdel(key: string, hash: string): Promise<void>;
     hincrby(key: string, hash: string, val: number): Promise<number>;
+    getRawConnection(): Redis.RedisClient;
     namespacedBy(namespacePrefix: string): StoreNamespace;
     getPrefix(): string;
     markKeyAsUsed(key: string): void;
@@ -43,6 +44,7 @@ export declare class StoreNamespace implements Store {
     prefix: string;
     store: Store;
     constructor(store: Store, prefix: string);
+    getRawConnection(): Redis.RedisClient;
     get(key: string): Promise<any>;
     set(key: string, value: any, expirySeconds?: number): Promise<boolean>;
     del(key: string): void;
