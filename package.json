@@ -1,6 +1,6 @@
 {
   "name": "safe-redis-schema",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Type-safe and validated data schemas for Redis and Typescript",
   "main": "./dist/index.js",
   "types": "./dist/index.d.js",
@@ -13,7 +13,7 @@
   "license": "MIT",
   "dependencies": {
     "redis": "^3.0.2",
-    "safe-portals": "^2.3.1"
+    "safe-portals": "^2.4.0"
   },
   "devDependencies": {
     "@types/redis": "^2.8.27",
