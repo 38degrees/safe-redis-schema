@@ -1,6 +1,6 @@
 {
   "name": "safe-redis-schema",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Type-safe and validated data schemas for Redis and Typescript",
   "main": "./dist/index.js",
   "types": "./dist/index.d.js",

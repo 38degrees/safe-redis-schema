@@ -15,8 +15,8 @@ export function defineObj<T>(
     get: async (): Promise<T> => {
       return store.get(key).then(v => type.read(v));
     },
-    set: async (val: T): Promise<boolean> => {
-      return store.set(key, type.write(val));
+    set: async (val: T, expirySeconds?: number): Promise<boolean> => {
+      return store.set(key, type.write(val), expirySeconds);
     },
     del: async (): Promise<void> => {
       return store.del(key);
