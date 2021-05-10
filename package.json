@@ -1,6 +1,6 @@
 {
   "name": "safe-redis-schema",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "Type-safe and validated data schemas for Redis and Typescript",
   "main": "./dist/index.js",
   "types": "./dist/index.d.js",
@@ -12,7 +12,7 @@
   "author": "Tom Morton <tom.m@38degrees.org.uk>",
   "license": "MIT",
   "dependencies": {
-    "redis": "^3.0.2",
+    "redis": "3.1.x",
     "safe-portals": "^2.4.0"
   },
   "devDependencies": {
