@@ -1,82 +1,98 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RedisStore = exports.StoreNamespace = exports.defineCounter = exports.defineHashOfCounters = exports.defineHashOf = exports.defineObj = void 0;
-const Redis = require("redis");
+exports.RedisStore = exports.StoreNamespace = void 0;
+exports.defineObj = defineObj;
+exports.defineHashOf = defineHashOf;
+exports.defineHashOfCounters = defineHashOfCounters;
+exports.defineCounter = defineCounter;
+const redis_1 = require("redis");
+/**
+ * safe-redis-schema
+ *
+ * Type-safe, validated data schemas layered over Redis. Schema definitions
+ * (`defineObj`, `defineHashOf`, `defineCounter`, `defineHashOfCounters`) pair a
+ * Redis key with a `safe-portals` serializer so reads and writes are validated
+ * at the boundary rather than trusted blindly.
+ *
+ * This is the v2 line, built against the promise-native node-redis v6 client.
+ * The v1 line wrapped node-redis v3's callback API in hand-rolled promises;
+ * against a promise-native client those wrappers collapse into thin `await`
+ * passthroughs. The public contracts are unchanged from v1:
+ *
+ * - `Store.get` JSON-decodes the stored value and resolves `undefined` (never
+ *   `null`) for a missing key.
+ * - `Store.set` JSON-encodes the value and resolves `true`.
+ * - `Store.hget` resolves the raw stored string (or `null` when absent) — JSON
+ *   decoding for hashes happens one layer up, in `defineHashOf`.
+ * - counters resolve plain numbers.
+ *
+ * The one deliberate change from v1: node-redis v6 clients do not auto-connect,
+ * so `RedisStore` connects lazily on first use (and exposes an explicit
+ * `connect()`), and `del` now returns a `Promise` so callers can await the
+ * round-trip instead of it being fire-and-forget.
+ */
 function defineObj(store, key, type) {
     store.markKeyAsUsed(key);
     return {
-        get: () => __awaiter(this, void 0, void 0, function* () {
+        get: async () => {
             return store.get(key).then(v => type.read(v));
-        }),
-        set: (val) => __awaiter(this, void 0, void 0, function* () {
-            return store.set(key, type.write(val));
-        }),
-        del: () => __awaiter(this, void 0, void 0, function* () {
+        },
+        set: async (val, expirySeconds) => {
+            return store.set(key, type.write(val), expirySeconds);
+        },
+        del: async () => {
             return store.del(key);
-        })
+        }
     };
 }
-exports.defineObj = defineObj;
 function defineHashOf(store, key, type) {
     store.markKeyAsUsed(key);
     return {
-        hget: (hkey) => __awaiter(this, void 0, void 0, function* () {
+        hget: async (hkey) => {
             return store.hget(key, hkey).then(v => type.read(JSON.parse(v)));
-        }),
-        hset: (hkey, val) => __awaiter(this, void 0, void 0, function* () {
+        },
+        hset: async (hkey, val) => {
             return store.hset(key, hkey, JSON.stringify(type.write(val)));
-        }),
-        hdel: (hkey) => __awaiter(this, void 0, void 0, function* () {
+        },
+        hdel: async (hkey) => {
             return store.hdel(key, hkey);
-        }),
-        del: () => __awaiter(this, void 0, void 0, function* () {
+        },
+        del: async () => {
             return store.del(key);
-        })
+        }
     };
 }
-exports.defineHashOf = defineHashOf;
 function defineHashOfCounters(store, key) {
     store.markKeyAsUsed(key);
     return {
-        get: (hkey) => __awaiter(this, void 0, void 0, function* () {
+        get: async (hkey) => {
             return store.hget(key, hkey).then(v => parseInt(v) || 0);
-        }),
-        incrby: (hkey, val) => __awaiter(this, void 0, void 0, function* () {
+        },
+        incrby: async (hkey, val) => {
             return store.hincrby(key, hkey, val);
-        }),
-        zero: (hkey) => __awaiter(this, void 0, void 0, function* () {
+        },
+        zero: async (hkey) => {
             return store.hdel(key, hkey);
-        }),
-        del: () => __awaiter(this, void 0, void 0, function* () {
+        },
+        del: async () => {
             return store.del(key);
-        })
+        }
     };
 }
-exports.defineHashOfCounters = defineHashOfCounters;
 function defineCounter(store, key) {
     store.markKeyAsUsed(key);
     return {
-        incrby: (val) => __awaiter(this, void 0, void 0, function* () {
+        incrby: async (val) => {
             return store.incrby(key, val);
-        }),
-        get: () => __awaiter(this, void 0, void 0, function* () {
+        },
+        get: async () => {
             return store.get(key).then(v => parseInt(v) || 0);
-        }),
-        zero: () => __awaiter(this, void 0, void 0, function* () {
+        },
+        zero: async () => {
             return store.del(key);
-        })
+        }
     };
 }
-exports.defineCounter = defineCounter;
 class StoreNamespace {
     constructor(store, prefix) {
         this.store = store;
@@ -90,7 +106,7 @@ class StoreNamespace {
         return this.store.set(this.prefix + key, value, expirySeconds);
     }
     del(key) {
-        this.store.del(this.prefix + key);
+        return this.store.del(this.prefix + key);
     }
     // atomically increment a counter, and return the new value. if the key
     // does not exist then this operation will set the counter to `val`
@@ -125,16 +141,40 @@ class StoreNamespace {
 exports.StoreNamespace = StoreNamespace;
 class RedisStore {
     constructor(client_or_connection_string) {
-        if (client_or_connection_string instanceof Redis.RedisClient) {
-            this.db = client_or_connection_string;
+        if (typeof client_or_connection_string === "string") {
+            this.db = (0, redis_1.createClient)({ url: client_or_connection_string });
         }
         else {
-            this.db = Redis.createClient(client_or_connection_string);
+            this.db = client_or_connection_string;
         }
         this.schemata = new Set([]);
     }
+    /**
+     * Ensure the underlying client is connected. Idempotent and safe to call
+     * concurrently — v6 clients do not auto-connect and throw if `connect()` runs
+     * twice, so the in-flight promise is cached and an already-open client is a
+     * no-op. Every command below awaits this first, so callers never have to
+     * connect explicitly; a caller that wants the connection established up front
+     * (e.g. before handing `getRawConnection()` to another library) can await it
+     * directly.
+     */
+    async connect() {
+        if (this.db.isOpen)
+            return;
+        if (!this.connecting)
+            this.connecting = this.db.connect();
+        await this.connecting;
+    }
+    /**
+     * Synchronously tear down the socket. v6 renamed v3's `end(true)` to
+     * `destroy()`; both drop the connection immediately without waiting for a
+     * server reply, which is what jest teardown relies on to avoid a leaked open
+     * handle. Guarded on `isOpen` because `destroy()` throws on a client that
+     * never connected.
+     */
     close() {
-        this.db.end(true);
+        if (this.db.isOpen)
+            this.db.destroy();
     }
     markKeyAsUsed(key) {
         if (this.schemata.has(key)) {
@@ -156,101 +196,50 @@ class RedisStore {
     namespacedBy(namespacePrefix) {
         return new StoreNamespace(this, namespacePrefix);
     }
-    incrby(key, val) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return new Promise((resolve, reject) => {
-                this.db.incrby(key, val, (error, value) => {
-                    if (error)
-                        reject(error);
-                    else
-                        resolve(value);
-                });
-            });
-        });
+    async incrby(key, val) {
+        await this.connect();
+        return this.db.incrBy(key, val);
     }
-    hget(key, hash) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return new Promise((resolve, reject) => {
-                this.db.hget(key, hash, (error, value) => {
-                    if (error)
-                        reject(error);
-                    else
-                        resolve(value);
-                });
-            });
-        });
+    async hget(key, hash) {
+        await this.connect();
+        // Normalise the v6 "field absent" reply to null: v1 (node-redis v3)
+        // resolved null here, and defineHashOf feeds this straight into
+        // JSON.parse — JSON.parse(null) yields null, JSON.parse(undefined) throws.
+        return (await this.db.hGet(key, hash)) ?? null;
     }
-    hset(key, hash, val) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return new Promise((resolve, reject) => {
-                this.db.hset(key, hash, val, (error) => {
-                    if (error)
-                        reject(error);
-                    else
-                        resolve();
-                });
-            });
-        });
+    async hset(key, hash, val) {
+        await this.connect();
+        await this.db.hSet(key, hash, val);
     }
-    hdel(key, hash) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return new Promise((resolve, reject) => {
-                this.db.hdel(key, hash, (error) => {
-                    if (error)
-                        reject(error);
-                    else
-                        resolve();
-                });
-            });
-        });
+    async hdel(key, hash) {
+        await this.connect();
+        await this.db.hDel(key, hash);
     }
     /**
      * increment field in a hash by val
      */
-    hincrby(key, hash, val) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return new Promise((resolve, reject) => {
-                this.db.hincrby(key, hash, val, (error, value) => {
-                    if (error)
-                        reject(error);
-                    else
-                        resolve(value);
-                });
-            });
-        });
+    async hincrby(key, hash, val) {
+        await this.connect();
+        return this.db.hIncrBy(key, hash, val);
     }
-    get(key) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return new Promise((resolve, reject) => {
-                this.db.get(key, (error, value) => {
-                    if (error) {
-                        throw error;
-                    }
-                    resolve(value ? JSON.parse(value) : undefined);
-                });
-            });
-        });
+    async get(key) {
+        await this.connect();
+        const value = await this.db.get(key);
+        return value ? JSON.parse(value) : undefined;
     }
-    set(key, value, expirySeconds) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return new Promise((resolve, reject) => {
-                const handler = (error, value) => {
-                    if (error) {
-                        throw error;
-                    }
-                    resolve(true);
-                };
-                if (expirySeconds === undefined) {
-                    this.db.set(key, JSON.stringify(value), handler);
-                }
-                else {
-                    this.db.setex(key, expirySeconds, JSON.stringify(value), handler);
-                }
-            });
-        });
+    async set(key, value, expirySeconds) {
+        await this.connect();
+        if (expirySeconds === undefined) {
+            await this.db.set(key, JSON.stringify(value));
+        }
+        else {
+            await this.db.set(key, JSON.stringify(value), { EX: expirySeconds });
+        }
+        return true;
     }
-    del(key) {
-        this.db.del(key);
+    async del(key) {
+        await this.connect();
+        await this.db.del(key);
     }
 }
 exports.RedisStore = RedisStore;

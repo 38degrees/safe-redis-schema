@@ -1,8 +1,33 @@
-import * as Redis from "redis";
+import { RedisClientType } from "redis";
 import * as Safe from "safe-portals";
+/**
+ * safe-redis-schema
+ *
+ * Type-safe, validated data schemas layered over Redis. Schema definitions
+ * (`defineObj`, `defineHashOf`, `defineCounter`, `defineHashOfCounters`) pair a
+ * Redis key with a `safe-portals` serializer so reads and writes are validated
+ * at the boundary rather than trusted blindly.
+ *
+ * This is the v2 line, built against the promise-native node-redis v6 client.
+ * The v1 line wrapped node-redis v3's callback API in hand-rolled promises;
+ * against a promise-native client those wrappers collapse into thin `await`
+ * passthroughs. The public contracts are unchanged from v1:
+ *
+ * - `Store.get` JSON-decodes the stored value and resolves `undefined` (never
+ *   `null`) for a missing key.
+ * - `Store.set` JSON-encodes the value and resolves `true`.
+ * - `Store.hget` resolves the raw stored string (or `null` when absent) — JSON
+ *   decoding for hashes happens one layer up, in `defineHashOf`.
+ * - counters resolve plain numbers.
+ *
+ * The one deliberate change from v1: node-redis v6 clients do not auto-connect,
+ * so `RedisStore` connects lazily on first use (and exposes an explicit
+ * `connect()`), and `del` now returns a `Promise` so callers can await the
+ * round-trip instead of it being fire-and-forget.
+ */
 export declare function defineObj<T>(store: Store, key: string, type: Safe.Type<T>): {
     get: () => Promise<T>;
-    set: (val: T) => Promise<boolean>;
+    set: (val: T, expirySeconds?: number) => Promise<boolean>;
     del: () => Promise<void>;
 };
 export declare function defineHashOf<T>(store: Store, key: string, type: Safe.Type<T>): {
@@ -28,13 +53,13 @@ export interface Store {
      */
     get(key: string): Promise<any>;
     set(key: string, value: any, expirySeconds?: number): Promise<boolean>;
-    del(key: string): void;
+    del(key: string): Promise<void>;
     incrby(key: string, val: number): Promise<number>;
     hget(key: string, hash: string): Promise<any>;
     hset(key: string, hash: string, value: string): Promise<void>;
     hdel(key: string, hash: string): Promise<void>;
     hincrby(key: string, hash: string, val: number): Promise<number>;
-    getRawConnection(): Redis.RedisClient;
+    getRawConnection(): RedisClientType;
     namespacedBy(namespacePrefix: string): StoreNamespace;
     getPrefix(): string;
     markKeyAsUsed(key: string): void;
@@ -44,10 +69,10 @@ export declare class StoreNamespace implements Store {
     prefix: string;
     store: Store;
     constructor(store: Store, prefix: string);
-    getRawConnection(): Redis.RedisClient;
+    getRawConnection(): RedisClientType;
     get(key: string): Promise<any>;
     set(key: string, value: any, expirySeconds?: number): Promise<boolean>;
-    del(key: string): void;
+    del(key: string): Promise<void>;
     incrby(key: string, val: number): Promise<number>;
     hget(key: string, hash: string): Promise<any>;
     hset(key: string, hash: string, value: string): Promise<void>;
@@ -59,13 +84,36 @@ export declare class StoreNamespace implements Store {
     isUsed(key: string): boolean;
 }
 export declare class RedisStore implements Store {
-    db: Redis.RedisClient;
+    db: RedisClientType;
     schemata: Set<string>;
-    constructor(client_or_connection_string: Redis.RedisClient | string);
+    /**
+     * Cached in-flight connect, so concurrent first commands share one
+     * `connect()` (node-redis throws if `connect()` is called on an
+     * already-connecting client).
+     */
+    private connecting;
+    constructor(client_or_connection_string: RedisClientType | string);
+    /**
+     * Ensure the underlying client is connected. Idempotent and safe to call
+     * concurrently — v6 clients do not auto-connect and throw if `connect()` runs
+     * twice, so the in-flight promise is cached and an already-open client is a
+     * no-op. Every command below awaits this first, so callers never have to
+     * connect explicitly; a caller that wants the connection established up front
+     * (e.g. before handing `getRawConnection()` to another library) can await it
+     * directly.
+     */
+    connect(): Promise<void>;
+    /**
+     * Synchronously tear down the socket. v6 renamed v3's `end(true)` to
+     * `destroy()`; both drop the connection immediately without waiting for a
+     * server reply, which is what jest teardown relies on to avoid a leaked open
+     * handle. Guarded on `isOpen` because `destroy()` throws on a client that
+     * never connected.
+     */
     close(): void;
     markKeyAsUsed(key: string): void;
     isUsed(key: string): boolean;
-    getRawConnection(): Redis.RedisClient;
+    getRawConnection(): RedisClientType;
     getPrefix(): string;
     namespacedBy(namespacePrefix: string): StoreNamespace;
     incrby(key: string, val: number): Promise<number>;
@@ -78,5 +126,5 @@ export declare class RedisStore implements Store {
     hincrby(key: string, hash: string, val: number): Promise<number>;
     get(key: string): Promise<any>;
     set(key: string, value: any, expirySeconds?: number): Promise<boolean>;
-    del(key: string): void;
+    del(key: string): Promise<void>;
 }
