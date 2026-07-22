@@ -253,14 +253,24 @@ export class RedisStore implements Store {
   }
 
   /**
-   * Synchronously tear down the socket. v6 renamed v3's `end(true)` to
-   * `destroy()`; both drop the connection immediately without waiting for a
-   * server reply, which is what jest teardown relies on to avoid a leaked open
-   * handle. Guarded on `isOpen` because `destroy()` throws on a client that
-   * never connected.
+   * Close the connection at shutdown / test teardown.
+   *
+   * Uses v6's graceful `close()` (which waits for any in-flight command to
+   * finish, then closes) rather than `destroy()`. `destroy()` rejects every
+   * in-flight command with `DisconnectsClientError`, so any un-awaited
+   * fire-and-forget command caught in flight would surface as an unhandled
+   * rejection. Graceful close lets those commands complete instead. Falls back
+   * to a forced `destroy()` if graceful close rejects (e.g. the client is
+   * mid-connect or already closing). No-op if never connected. Await it so the
+   * socket is fully closed before the caller proceeds.
    */
-  close() {
-    if (this.db.isOpen) this.db.destroy();
+  async close(): Promise<void> {
+    if (!this.db.isOpen) return;
+    try {
+      await this.db.close();
+    } catch {
+      if (this.db.isOpen) this.db.destroy();
+    }
   }
 
   markKeyAsUsed(key: string): void {
