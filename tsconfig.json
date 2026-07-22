@@ -1,9 +1,11 @@
 {
   "compilerOptions": {
     "module": "commonjs",
-    "target": "es2015",
+    "target": "es2020",
     "strictNullChecks": true,
     "noImplicitAny": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
     "declaration": true,
     "outDir": "./dist"
   },

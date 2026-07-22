@@ -5,6 +5,24 @@
 See [./src/index.test.ts](./src/index.test.ts) for full example usage of all
 data types.
 
+### v2 — node-redis v6
+
+Version 2 is built against the promise-native [node-redis](https://github.com/redis/node-redis)
+v6 client (v1 targeted the callback-based v3 client). The schema API and its
+contracts are unchanged, with two things to know about connection lifecycle:
+
+- **Lazy connect.** node-redis v6 clients do not auto-connect. `RedisStore`
+  connects lazily on the first command, so in most cases you don't need to do
+  anything. If you hand the raw client to another library (via
+  `getRawConnection()`) before issuing any command, call `await store.connect()`
+  first to make sure the socket is open. `connect()` is idempotent.
+- **`RESP` protocol.** node-redis v6 defaults to RESP3, which requires a Redis
+  **server** ≥ 6. Against an older server, construct the client with `{ RESP: 2 }`
+  and pass it to `new RedisStore(client)`.
+
+`close()` tears the socket down synchronously (v6's `destroy()`), which is what
+test teardown relies on to avoid a leaked open handle.
+
 You can define a redis data schema, exporting particular definitions:
 
 ```TSX

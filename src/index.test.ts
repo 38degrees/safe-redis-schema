@@ -1,4 +1,4 @@
-import * as Redis from "redis";
+import { createClient, RedisClientType } from "redis";
 import {
   RedisStore,
   defineObj,
@@ -9,6 +9,17 @@ import {
 import * as Safe from "safe-portals";
 
 const redisUrl = process.env["REDIS_URL"] || 'redis://127.0.0.1:6379';
+
+// A raw v6 client for the tests that exercise the "pass an existing client"
+// constructor path. Not auto-connected — RedisStore connects it lazily on
+// first use, matching how consumers wire it up.
+const rawClient = (): RedisClientType => {
+  const client = createClient({ url: redisUrl }) as RedisClientType;
+  // Without an error listener node-redis rethrows connection errors as
+  // uncaught exceptions; keep the suite quiet if redis blips.
+  client.on("error", () => {});
+  return client;
+};
 
 describe("Redis KvStore", () => {
   test("Promise-based redis wrapper", async () => {
@@ -56,6 +67,22 @@ describe("Redis KvStore", () => {
     kv.close();
   });
 
+  test("set with expiry", async () => {
+    const kv = new RedisStore(redisUrl);
+    const ns = kv.namespacedBy('redis-schema:test:');
+
+    // Expiry is applied (EX option) and the value round-trips before it lapses.
+    expect(await ns.set("expiring", 42, 60)).toEqual(true);
+    expect(await ns.get("expiring")).toEqual(42);
+    // TTL is set (positive, at most the requested window).
+    const ttl = await ns.getRawConnection().ttl("redis-schema:test:expiring");
+    expect(ttl).toBeGreaterThan(0);
+    expect(ttl).toBeLessThanOrEqual(60);
+
+    await ns.del("expiring");
+    kv.close();
+  });
+
   test("defineObj", async () => {
     const kv = new RedisStore(redisUrl);
     const ns = kv.namespacedBy('redis-schema:test:');
@@ -89,7 +116,7 @@ describe("Redis KvStore", () => {
   });
 
   test("defineHashOf", async () => {
-    const redis = Redis.createClient(redisUrl);
+    const redis = rawClient();
     const kv = new RedisStore(redis);
     const ns = kv.namespacedBy('redis-schema:test:');
 
@@ -106,11 +133,11 @@ describe("Redis KvStore", () => {
     expect (await c.hget('foo')).toEqual([34, "lo"]);
     expect (await c.hget('bar')).toEqual(undefined);
 
-    redis.end(true);
+    redis.destroy();
   });
 
   test("defineHashOfCounters", async () => {
-    const redis = Redis.createClient(redisUrl);
+    const redis = rawClient();
     const kv = new RedisStore(redis);
     const ns = kv.namespacedBy('redis-schema:test:');
 
@@ -127,11 +154,11 @@ describe("Redis KvStore", () => {
     expect (await c.get('foo')).toEqual(4);
     expect (await c.get('bar')).toEqual(0);
 
-    redis.end(true);
+    redis.destroy();
   });
 
   test("Schema non-overwrite enforcement", async () => {
-    const redis = Redis.createClient(redisUrl);
+    const redis = rawClient();
     const kv = new RedisStore(redis);
     const ns = kv.namespacedBy('redis-schema:test:');
 
@@ -141,6 +168,9 @@ describe("Redis KvStore", () => {
     const ns2 = ns.namespacedBy('foo:');
     expect(() => defineCounter(ns2, "bar")).toThrowError();
 
-    redis.end(true);
+    // This suite never issues a command, so the lazily-connected client may
+    // never have opened; close()/destroy() both tolerate that here.
+    kv.close();
+    if (redis.isOpen) redis.destroy();
   });
 });
