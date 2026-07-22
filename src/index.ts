@@ -2,6 +2,15 @@ import { createClient, RedisClientType } from "redis";
 import * as Safe from "safe-portals";
 
 /**
+ * A node-redis client type that doesn't pin the RESP protocol version. The bare
+ * `RedisClientType` alias defaults to RESP3; a client created with `{ RESP: 2 }`
+ * (needed to talk to a Redis server < 6) has a different, invariant type and
+ * would not be assignable to it. Widening the generics keeps both RESP2 and
+ * RESP3 clients assignable while preserving the standard command signatures.
+ */
+export type AnyRedisClient = RedisClientType<any, any, any, any, any>;
+
+/**
  * safe-redis-schema
  *
  * Type-safe, validated data schemas layered over Redis. Schema definitions
@@ -140,7 +149,7 @@ export interface Store {
   hdel(key: string, hash: string): Promise<void>;
   hincrby(key: string, hash: string, val: number): Promise<number>;
 
-  getRawConnection(): RedisClientType;
+  getRawConnection(): AnyRedisClient;
 
   /* utils */
   namespacedBy(namespacePrefix: string): StoreNamespace;
@@ -201,7 +210,7 @@ export class StoreNamespace implements Store {
 }
 
 export class RedisStore implements Store {
-  db: RedisClientType;
+  db: AnyRedisClient;
   schemata: Set<string>;
   /**
    * Cached in-flight connect, so concurrent first commands share one
@@ -210,9 +219,18 @@ export class RedisStore implements Store {
    */
   private connecting: Promise<unknown> | undefined;
 
-  constructor(client_or_connection_string: RedisClientType | string) {
+  constructor(client_or_connection_string: AnyRedisClient | string) {
     if (typeof client_or_connection_string === "string") {
-      this.db = createClient({ url: client_or_connection_string }) as RedisClientType;
+      this.db = createClient({ url: client_or_connection_string }) as AnyRedisClient;
+      // node-redis clients are EventEmitters that emit 'error' on connection
+      // problems; with no listener Node rethrows those as uncaught exceptions.
+      // When we own the client (URL path) attach a default listener so a blip
+      // doesn't crash the process. Callers who pass their own client are
+      // responsible for their own error handling (and typically attach a
+      // logger before handing it in).
+      this.db.on("error", (error) => {
+        console.error("safe-redis-schema: redis client error:", error);
+      });
     } else {
       this.db = client_or_connection_string;
     }
@@ -271,7 +289,9 @@ export class RedisStore implements Store {
 
   async incrby(key: string, val: number): Promise<number> {
     await this.connect();
-    return this.db.incrBy(key, val);
+    // Coerce: with a RESP-agnostic client type the numeric reply widens to
+    // `number | \`${number}\``; Number() normalises both RESP2/RESP3 shapes.
+    return Number(await this.db.incrBy(key, val));
   }
 
   async hget(key: string, hash: string): Promise<any> {
@@ -297,13 +317,15 @@ export class RedisStore implements Store {
    */
   async hincrby(key: string, hash: string, val: number): Promise<number> {
     await this.connect();
-    return this.db.hIncrBy(key, hash, val);
+    return Number(await this.db.hIncrBy(key, hash, val));
   }
 
   async get(key: string): Promise<any> {
     await this.connect();
     const value = await this.db.get(key);
-    return value ? JSON.parse(value) : undefined;
+    // toString(): the RESP-agnostic client type widens the reply to
+    // `string | Buffer`; both stringify to the stored JSON payload.
+    return value ? JSON.parse(value.toString()) : undefined;
   }
 
   async set(key: string, value: any, expirySeconds?: number): Promise<boolean> {

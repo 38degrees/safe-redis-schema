@@ -143,6 +143,15 @@ class RedisStore {
     constructor(client_or_connection_string) {
         if (typeof client_or_connection_string === "string") {
             this.db = (0, redis_1.createClient)({ url: client_or_connection_string });
+            // node-redis clients are EventEmitters that emit 'error' on connection
+            // problems; with no listener Node rethrows those as uncaught exceptions.
+            // When we own the client (URL path) attach a default listener so a blip
+            // doesn't crash the process. Callers who pass their own client are
+            // responsible for their own error handling (and typically attach a
+            // logger before handing it in).
+            this.db.on("error", (error) => {
+                console.error("safe-redis-schema: redis client error:", error);
+            });
         }
         else {
             this.db = client_or_connection_string;
@@ -198,7 +207,9 @@ class RedisStore {
     }
     async incrby(key, val) {
         await this.connect();
-        return this.db.incrBy(key, val);
+        // Coerce: with a RESP-agnostic client type the numeric reply widens to
+        // `number | \`${number}\``; Number() normalises both RESP2/RESP3 shapes.
+        return Number(await this.db.incrBy(key, val));
     }
     async hget(key, hash) {
         await this.connect();
@@ -220,12 +231,14 @@ class RedisStore {
      */
     async hincrby(key, hash, val) {
         await this.connect();
-        return this.db.hIncrBy(key, hash, val);
+        return Number(await this.db.hIncrBy(key, hash, val));
     }
     async get(key) {
         await this.connect();
         const value = await this.db.get(key);
-        return value ? JSON.parse(value) : undefined;
+        // toString(): the RESP-agnostic client type widens the reply to
+        // `string | Buffer`; both stringify to the stored JSON payload.
+        return value ? JSON.parse(value.toString()) : undefined;
     }
     async set(key, value, expirySeconds) {
         await this.connect();

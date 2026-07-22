@@ -1,6 +1,14 @@
 import { RedisClientType } from "redis";
 import * as Safe from "safe-portals";
 /**
+ * A node-redis client type that doesn't pin the RESP protocol version. The bare
+ * `RedisClientType` alias defaults to RESP3; a client created with `{ RESP: 2 }`
+ * (needed to talk to a Redis server < 6) has a different, invariant type and
+ * would not be assignable to it. Widening the generics keeps both RESP2 and
+ * RESP3 clients assignable while preserving the standard command signatures.
+ */
+export type AnyRedisClient = RedisClientType<any, any, any, any, any>;
+/**
  * safe-redis-schema
  *
  * Type-safe, validated data schemas layered over Redis. Schema definitions
@@ -59,7 +67,7 @@ export interface Store {
     hset(key: string, hash: string, value: string): Promise<void>;
     hdel(key: string, hash: string): Promise<void>;
     hincrby(key: string, hash: string, val: number): Promise<number>;
-    getRawConnection(): RedisClientType;
+    getRawConnection(): AnyRedisClient;
     namespacedBy(namespacePrefix: string): StoreNamespace;
     getPrefix(): string;
     markKeyAsUsed(key: string): void;
@@ -69,7 +77,7 @@ export declare class StoreNamespace implements Store {
     prefix: string;
     store: Store;
     constructor(store: Store, prefix: string);
-    getRawConnection(): RedisClientType;
+    getRawConnection(): AnyRedisClient;
     get(key: string): Promise<any>;
     set(key: string, value: any, expirySeconds?: number): Promise<boolean>;
     del(key: string): Promise<void>;
@@ -84,7 +92,7 @@ export declare class StoreNamespace implements Store {
     isUsed(key: string): boolean;
 }
 export declare class RedisStore implements Store {
-    db: RedisClientType;
+    db: AnyRedisClient;
     schemata: Set<string>;
     /**
      * Cached in-flight connect, so concurrent first commands share one
@@ -92,7 +100,7 @@ export declare class RedisStore implements Store {
      * already-connecting client).
      */
     private connecting;
-    constructor(client_or_connection_string: RedisClientType | string);
+    constructor(client_or_connection_string: AnyRedisClient | string);
     /**
      * Ensure the underlying client is connected. Idempotent and safe to call
      * concurrently — v6 clients do not auto-connect and throw if `connect()` runs
@@ -113,7 +121,7 @@ export declare class RedisStore implements Store {
     close(): void;
     markKeyAsUsed(key: string): void;
     isUsed(key: string): boolean;
-    getRawConnection(): RedisClientType;
+    getRawConnection(): AnyRedisClient;
     getPrefix(): string;
     namespacedBy(namespacePrefix: string): StoreNamespace;
     incrby(key: string, val: number): Promise<number>;
