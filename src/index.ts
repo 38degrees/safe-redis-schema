@@ -253,24 +253,21 @@ export class RedisStore implements Store {
   }
 
   /**
-   * Close the connection at shutdown / test teardown.
+   * Synchronously tear down the socket. v6 renamed v3's `end(true)` to
+   * `destroy()`; both drop the connection immediately without waiting for a
+   * server reply (a graceful `close()` instead awaits in-flight commands and can
+   * block teardown for up to the command timeout). Guarded on `isOpen` because
+   * `destroy()` throws on a client that never connected.
    *
-   * Uses v6's graceful `close()` (which waits for any in-flight command to
-   * finish, then closes) rather than `destroy()`. `destroy()` rejects every
-   * in-flight command with `DisconnectsClientError`, so any un-awaited
-   * fire-and-forget command caught in flight would surface as an unhandled
-   * rejection. Graceful close lets those commands complete instead. Falls back
-   * to a forced `destroy()` if graceful close rejects (e.g. the client is
-   * mid-connect or already closing). No-op if never connected. Await it so the
-   * socket is fully closed before the caller proceeds.
+   * Note: `destroy()` rejects any in-flight command with
+   * `DisconnectsClientError`. If you issue fire-and-forget commands (no await),
+   * either await them before `close()` or install a process-level
+   * `unhandledRejection` handler that ignores redis client-lifecycle errors at
+   * shutdown, otherwise a command caught in flight surfaces as an unhandled
+   * rejection.
    */
-  async close(): Promise<void> {
-    if (!this.db.isOpen) return;
-    try {
-      await this.db.close();
-    } catch {
-      if (this.db.isOpen) this.db.destroy();
-    }
+  close() {
+    if (this.db.isOpen) this.db.destroy();
   }
 
   markKeyAsUsed(key: string): void {

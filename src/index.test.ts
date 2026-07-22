@@ -64,7 +64,7 @@ describe("Redis KvStore", () => {
     expect(await kv.hincrby("test_hash", "key", 1)).toEqual(2);
     expect(await kv.hget("test_hash", "key")).toEqual("2");
 
-    await kv.close();
+    kv.close();
   });
 
   test("set with expiry", async () => {
@@ -80,7 +80,7 @@ describe("Redis KvStore", () => {
     expect(ttl).toBeLessThanOrEqual(60);
 
     await ns.del("expiring");
-    await kv.close();
+    kv.close();
   });
 
   test("defineObj", async () => {
@@ -94,7 +94,7 @@ describe("Redis KvStore", () => {
     await k1.set([true,true,false]);
     expect (await k1.get()).toEqual([true, true, false]);
 
-    await kv.close();
+    kv.close();
   });
 
   test("defineCounter", async () => {
@@ -112,7 +112,7 @@ describe("Redis KvStore", () => {
     await c.zero();
     expect (await c.get()).toEqual(0);
 
-    await kv.close();
+    kv.close();
   });
 
   test("defineHashOf", async () => {
@@ -170,7 +170,7 @@ describe("Redis KvStore", () => {
 
     // This suite never issues a command, so the lazily-connected client may
     // never have opened; close()/destroy() both tolerate that here.
-    await kv.close();
+    kv.close();
     if (redis.isOpen) redis.destroy();
   });
 });
